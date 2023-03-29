@@ -181,7 +181,7 @@ def main(city: str, factor: float, k:int):
     print("\n--- LDA (Content Base Filtering) ---")
     # TODO: search for the yelp recsys blogpost with topic modeling
 
-    print("\n LightFM (Hybrid approach)")
+    print("\n--- LightFM (Hybrid approach) ---")
     # TODO: check if this makes sense
 
 

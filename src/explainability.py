@@ -1,5 +1,7 @@
 import argparse
 
+# check: https://www.kaggle.com/code/mervetorkan/association-rules-with-python
+
 
 def main(city: str):
     print("TODO")
