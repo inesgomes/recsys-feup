@@ -1,8 +1,9 @@
+import argparse
+from surprise.accuracy import rmse, mse
 import pandas as pd
 from surprise import SVD, Reader, Dataset, KNNWithMeans
 from surprise.model_selection import train_test_split
-from surprise.accuracy import rmse, mse
-import argparse
+
 
 
 def split_train_test(df_review: pd.DataFrame, date: str) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -75,7 +76,7 @@ def get_recommendations(data: pd.DataFrame, n: int) -> pd.DataFrame:
     return data_lst
 
 
-def train_svd(trainset: pd.DataFrame, testset: pd.DataFrame, n:int):
+def train_svd(trainset: pd.DataFrame, testset: pd.DataFrame, n: int):
     """
     train and evaluate SVD (surprise lib)
     """
@@ -153,6 +154,27 @@ def implicit_evaluation(recs, n):
     print(f"Recall@{n}: {rak:.2%}")
 
 
+def main_one_model(city: str, factor: float, k:int, model: str):
+    """
+    """
+    # read clean data
+    df_review = pd.read_pickle(f'../data/clean/reviews_{city}_2015_2020.pkl')
+    # split
+    trainset, testset = train_test_split_surprise(df_review, factor)
+
+    # train: for now, only SVD and KNN are available
+    if model=="svd":
+        preds, recs = train_svd(trainset, testset, k)
+    elif model =='knn':
+        preds, recs = train_knn(trainset, testset, k)
+    else:
+        return None
+  
+    # save data
+    pd.DataFrame(preds).to_pickle(f"../data/clean/predictions_{model}_{city}.pkl")
+    recs.to_pickle(f"../data/clean/recommendations_{model}_{city}_top_{k}.pkl")
+
+
 def main(city: str, factor: float, k:int):
     """
     calculate predictions
@@ -190,6 +212,11 @@ if __name__ == '__main__':
     parser.add_argument('--city', type=str, required=True)
     parser.add_argument('--factor', type=float, default=0.25)
     parser.add_argument('--k', type=int, default=10)
+    parser.add_argument('--model', type=str, default='all')
     args = parser.parse_args()
-
-    main(args.city, args.factor, args.k)
+       
+    if args.model != 'all':
+        main_one_model(args.city, args.factor, args.k, args.model)
+    else:
+         main(args.city, args.factor, args.k)
+    
