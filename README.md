@@ -4,6 +4,8 @@ To run step by step:
 
 `python predictions.py --city Philadelphia --factor 0.25 --k 5 --model svd`
 
-(TODO) To run full pipeline:
+`python explainability.py --city Philadelphia --k 10 --model svd`
+
+To run full pipeline (default model is SVD):
 
 `python src --city Philadelphia`

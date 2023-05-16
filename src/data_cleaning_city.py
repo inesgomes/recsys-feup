@@ -2,13 +2,21 @@ import pandas as pd
 import argparse
 
 
+# constants
+MIN_USER_REVIEWS = 5
+MIN_BUSI_REVIEWS = 10
+MIN_DATE = '2015-01-01'
+MAX_DATE = '2020-01-01'
+MIN_REVIEW_DATE = '2019-01-01'
+
+
 def read_chunks(file, cols, chunk_size=500000):
     """
     read dataset in chunks
     """
     # load dataset
     df = pd.read_json(
-        path_or_buf=f'../data/external/yelp_dataset/yelp_academic_dataset_{file}.json', chunksize=chunk_size, lines=True)
+        path_or_buf=f'data/external/yelp_dataset/yelp_academic_dataset_{file}.json', chunksize=chunk_size, lines=True)
     # There are multiple chunks to be read
     chunk_list = [chunk[cols] for chunk in df]
     # return as dataframe
@@ -19,12 +27,6 @@ def data_cleaning(df_business: pd.DataFrame, df_review: pd.DataFrame, df_user: p
     """
     data cleaning and merging: selects only one city and merges the three datasets into one
     """
-    # constants
-    MIN_USER_REVIEWS = 5
-    MIN_BUSI_REVIEWS = 2
-    MIN_DATE = '2015-01-01'
-    MAX_DATE = '2020-01-01'
-
     # column rename
     df_business.columns = 'business_'+df_business.columns
     df_review.columns = 'review_'+df_review.columns
@@ -33,7 +35,7 @@ def data_cleaning(df_business: pd.DataFrame, df_review: pd.DataFrame, df_user: p
     df_review_date = df_review[(df_review['review_date'] >= MIN_DATE) & (
         df_review['review_date'] < MAX_DATE)]
     # select one city - because it's more realistic that people will want recommendations within their city
-    df_business_city = df_business[df_business['business_city'] == city]
+    df_business_city = df_business[df_business['business_city'] == city] if city is not None else df_business
     # Inner merge with edited business file so only reviews related to the business remain
     df_review_clean = pd.merge(df_business_city, df_review_date,
                                left_on='business_business_id', right_on='review_business_id', how='inner')
@@ -48,6 +50,9 @@ def data_cleaning(df_business: pd.DataFrame, df_review: pd.DataFrame, df_user: p
         "business_id").filter(lambda x: x['business_id'].count() >= MIN_BUSI_REVIEWS)
     df_review_clean_enriched = df_review_clean_enriched.groupby(
         "user_id").filter(lambda x: x['user_id'].count() >= MIN_USER_REVIEWS)
+    # remove businesses with first review after 2019 - i.e. new businesses
+    df_busi_date = df_review_clean_enriched.groupby('business_id')['review_date'].min()
+    df_review_clean_enriched = df_review_clean_enriched[df_review_clean_enriched['business_id'].isin(df_busi_date[df_busi_date<MIN_REVIEW_DATE].index)]
     # drop extra columns
     return df_review_clean_enriched.drop(columns=['business_city', 'review_business_id', 'review_user_id'])
 
@@ -68,6 +73,7 @@ def build_user_profile(df_review: pd.DataFrame):
 
 def build_business_profile(df_review: pd.DataFrame):
     """
+    TODO
     business content: topics OHE? maybe LDA or something - think about this
     """
     df_review['business_categories_lst'] = df_review['business_categories'].apply(
@@ -76,7 +82,7 @@ def build_business_profile(df_review: pd.DataFrame):
     return df_review.drop(columns=['business_categories'])
 
 
-def main(city: str):
+def build_dataset(city: str):
     """
     Clean dataset and return reviews for one city only
     """
@@ -93,14 +99,17 @@ def main(city: str):
     # build user profile
     df_review_clean = build_user_profile(df_review_clean)
 
-    # TODO: build business profile
+    #TODO: add business profile
 
-    # save data
-    df_review_clean.to_pickle(f"../data/clean/reviews_{city}_2015_2020.pkl")
+    # save dataset
+    df_review_clean.to_pickle(f"data/clean/reviews_{city}_2015_2020.pkl")
+    
+    return df_review_clean
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--city', type=str, required=True)
     args = parser.parse_args()
-    main(args.city)
+
+    df_review_city = build_dataset(args.city)

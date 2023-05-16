@@ -35,9 +35,22 @@ def train_test_split_surprise(df_review: pd.DataFrame, factor: float):
     # transform in surprise dataset
     reader = Reader(rating_scale=(1, 5))
     dataset = Dataset.load_from_df(df_review[relevant_cols], reader)
-    # split x% to test
+    # split x% to test -> the test set is only used for evaluation purposes
     trainset, testset = train_test_split(dataset, shuffle=False, test_size=factor)
-    return trainset, testset
+    # anti-test set is the user x item tuples without ratings
+    antitestset = trainset.build_anti_testset()
+    return trainset, testset, antitestset
+
+
+def trainset_df(trainset):
+    """
+    """
+    data_list = []
+    for (user, item, rating) in trainset.all_ratings():
+        data_list.append({'uid': trainset.to_raw_uid(user), 'iid': trainset.to_raw_iid(item), 'r': rating})
+
+    return pd.DataFrame(data_list)
+
 
 
 def get_user_top_n(matrix: pd.DataFrame, user_id: str, top: int):
@@ -57,7 +70,7 @@ def get_recommendations(data: pd.DataFrame, n: int) -> pd.DataFrame:
     this is stupid, because we get always the top user recommendations?
     """
     # transform data in dataframe
-    data = pd.DataFrame(data).drop("details", axis=1)
+    data = data.drop("details", axis=1)
     data.columns = ['user_id', 'business_id', 'actual', 'predictions']
     
     # create matrix of predicted values
@@ -73,41 +86,19 @@ def get_recommendations(data: pd.DataFrame, n: int) -> pd.DataFrame:
         recs.append(predictions)
     data_lst['recommendations'] = recs
 
-    return data_lst
+    return data_lst.reset_index()
 
 
-def train_svd(trainset: pd.DataFrame, testset: pd.DataFrame, n: int):
+def train_model(trainset, testset, algo, top_n):
     """
-    train and evaluate SVD (surprise lib)
+    train and evaluate a given model from surprise lib
     """
     # fit model
-    algo = SVD(n_factors=10) # TODO change the number of factors
-    algo.fit(trainset)
-
-    # make predictions with lib
-    test_pred = algo.test(testset)
-    
+    mdl = algo.fit(trainset)
+    # make predictions
+    test_pred = mdl.test(testset)
     # get recommendations
-    test_recs = get_recommendations(test_pred, n)
-
-    return test_pred, test_recs
-
-
-def train_knn(trainset: pd.DataFrame, testset: pd.DataFrame, n:int):
-    """
-    train and evaluate SVD (surprise lib)
-    """
-    # TODO hyperparameter tunning
-    # fit model
-    algo = KNNWithMeans(k=20)
-    algo.fit(trainset)
-
-    # make predictions with lib
-    test_pred = algo.test(testset)
-    
-    # get recommendations
-    test_recs = get_recommendations(test_pred, n)
-
+    test_recs = get_recommendations(pd.DataFrame(test_pred), top_n)
     return test_pred, test_recs
 
 
@@ -159,23 +150,28 @@ def main_one_model(city: str, factor: float, k:int, model: str):
     """
     # read clean data
     df_review = pd.read_pickle(f'../data/clean/reviews_{city}_2015_2020.pkl')
+
     # split
-    trainset, testset = train_test_split_surprise(df_review, factor)
+    trainset, testset, _ = train_test_split_surprise(df_review, factor)
 
     # train: for now, only SVD and KNN are available
     if model=="svd":
-        preds, recs = train_svd(trainset, testset, k)
+        algo = SVD(n_factors=10)
     elif model =='knn':
-        preds, recs = train_knn(trainset, testset, k)
+        algo = KNNWithMeans(k=20)
     else:
         return None
+    
+    preds, recs = train_model(trainset, testset, k, algo)
   
     # save data
+    train_df = trainset_df(trainset)
+    train_df.to_pickle('../data/clean/train.pkl')
     pd.DataFrame(preds).to_pickle(f"../data/clean/predictions_{model}_{city}.pkl")
     recs.to_pickle(f"../data/clean/recommendations_{model}_{city}_top_{k}.pkl")
 
 
-def main(city: str, factor: float, k:int):
+def main_multiple_models(city: str, factor: float, k:int):
     """
     calculate predictions
     """
@@ -183,20 +179,19 @@ def main(city: str, factor: float, k:int):
     df_review = pd.read_pickle(f'../data/clean/reviews_{city}_2015_2020.pkl')
 
     # split
-    trainset, testset = train_test_split_surprise(df_review, factor)
+    trainset, testset, _ = train_test_split_surprise(df_review, factor)
 
     # train and evaluate several models
-
     print("\n--- Popularity ---")
     # TODO: copy from recmetrics example notebook
 
     print("\n--- SVD (collaborative filtering)---")
-    preds, recs = train_svd(trainset, testset, k)
+    preds, recs = train_model(trainset, testset, k, SVD(n_factors=10))
     explicit_evaluation(preds)
     implicit_evaluation(recs, k)
 
     print("\n--- KNN with means (collaborative filtering)---")
-    preds, recs = train_knn(trainset, testset, k)
+    preds, recs = train_model(trainset, testset, k, KNNWithMeans(k=20))
     explicit_evaluation(preds)
     implicit_evaluation(recs, k)
 
@@ -218,5 +213,5 @@ if __name__ == '__main__':
     if args.model != 'all':
         main_one_model(args.city, args.factor, args.k, args.model)
     else:
-         main(args.city, args.factor, args.k)
+        main_multiple_models(args.city, args.factor, args.k)
     
